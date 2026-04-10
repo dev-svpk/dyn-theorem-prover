@@ -1,0 +1,12 @@
+[package]
+name = "dyn-theorem-prover"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+lalrpop = "0.20"
+
+[dependencies]
+lalrpop-util = { version = "0.20", features = ["lexer"] }
+rustyline = "13"

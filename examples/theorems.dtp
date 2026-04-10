@@ -1,0 +1,157 @@
+-- DynTP: Theorem proving examples
+-- ================================
+
+-- Identity function via term
+def id (A : Type) (x : A) : A := x
+
+-- Identity theorem via tactics
+theorem id_tac (A : Type) (x : A) : A := by {
+  intro A;
+  intro x;
+  assumption
+}
+
+-- Modus ponens: if A and A -> B, then B
+theorem modus_ponens (A : Type) (B : Type) (ha : A) (f : A -> B) : B := by {
+  exact f ha
+}
+
+-- Function composition
+theorem compose_works (A : Type) (B : Type) (C : Type)
+  (f : B -> C) (g : A -> B) (x : A) : C := by {
+  exact f (g x)
+}
+
+-- Natural number operations
+#eval Nat.add 10 20
+#eval Nat.mul 6 7
+
+-- Doubling
+def double (n : Nat) : Nat := Nat.add n n
+#eval double 21
+
+-- Fibonacci (via pattern matching)
+-- Note: this is the naive recursive version
+def fib (n : Nat) : Nat :=
+  match n with
+    | zero => 0
+    | succ m =>
+      match m with
+        | zero => 1
+        | succ k => Nat.add (fib k) (fib m)
+      end
+  end
+
+#eval fib 0
+#eval fib 1
+#eval fib 5
+#eval fib 10
+
+-- Inductive types
+inductive Vec : Type where
+  | vnil : Vec
+  | vcons : Nat -> Vec -> Vec
+
+def vlength (v : Vec) : Nat :=
+  match v with
+    | vnil => 0
+    | vcons h t => succ (vlength t)
+  end
+
+#eval vlength vnil
+#eval vlength (vcons 1 (vcons 2 (vcons 3 vnil)))
+
+-- Sum the elements of a vector
+def vsum (v : Vec) : Nat :=
+  match v with
+    | vnil => 0
+    | vcons h t => Nat.add h (vsum t)
+  end
+
+#eval vsum (vcons 1 (vcons 2 (vcons 3 vnil)))
+
+-- Maybe type
+inductive Maybe : Type where
+  | nothing : Maybe
+  | just : Nat -> Maybe
+
+def from_maybe (default : Nat) (m : Maybe) : Nat :=
+  match m with
+    | nothing => default
+    | just x => x
+  end
+
+#eval from_maybe 0 nothing
+#eval from_maybe 0 (just 42)
+
+-- Boolean logic
+def band (a : Bool) (b : Bool) : Bool :=
+  if a then b else false
+
+def bor (a : Bool) (b : Bool) : Bool :=
+  if a then true else b
+
+#eval band true true
+#eval band true false
+#eval bor false true
+#eval bor false false
+
+-- Higher-order functions on vectors
+def vmap (f : Nat -> Nat) (v : Vec) : Vec :=
+  match v with
+    | vnil => vnil
+    | vcons h t => vcons (f h) (vmap f t)
+  end
+
+def increment (n : Nat) : Nat := succ n
+
+#eval vsum (vmap increment (vcons 1 (vcons 2 (vcons 3 vnil))))
+
+-- Power function
+def power (base : Nat) (exp : Nat) : Nat :=
+  match exp with
+    | zero => 1
+    | succ e => Nat.mul base (power base e)
+  end
+
+#eval power 2 10
+#eval power 3 4
+
+-- Theorem: A -> A (identity is a theorem)
+theorem id_thm : forall (A : Type), A -> A := by {
+  intro A;
+  intro x;
+  assumption
+}
+
+-- Theorem: A -> B -> A (constant function)
+theorem const_thm : forall (A : Type) (B : Type), A -> B -> A := by {
+  intro A;
+  intro B;
+  intro a;
+  intro b;
+  assumption
+}
+
+-- Theorem: (A -> B) -> (B -> C) -> (A -> C) (transitivity of implication)
+theorem trans_thm : forall (A : Type) (B : Type) (C : Type), (A -> B) -> (B -> C) -> A -> C := by {
+  intro A;
+  intro B;
+  intro C;
+  intro f;
+  intro g;
+  intro a;
+  exact g (f a)
+}
+
+-- Example proving that 2 + 2 = 4 (via sorry for now, as Eq needs full elaboration)
+-- We need the Eq type to really prove this
+
+-- Axiom-based approach for propositions we can't yet prove
+axiom add_zero_right : forall (n : Nat), Eq Nat (Nat.add n 0) n
+axiom add_succ_right : forall (n : Nat) (m : Nat), Eq Nat (Nat.add n (succ m)) (succ (Nat.add n m))
+
+-- Print some types to verify
+#check Eq
+#check Eq.refl
+#print id
