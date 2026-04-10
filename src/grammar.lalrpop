@@ -1,0 +1,324 @@
+use crate::ast::*;
+use crate::ast_helpers::*;
+
+grammar;
+
+// ─── Tokens ───────────────────────────────────────────────────
+
+match {
+    // Keywords
+    "def",
+    "theorem",
+    "lemma",
+    "axiom",
+    "example",
+    "inductive",
+    "where",
+    "fun",
+    "forall",
+    "let",
+    "in",
+    "match",
+    "with",
+    "if",
+    "then",
+    "else",
+    "by",
+    "Prop",
+    "Type",
+    "true",
+    "false",
+    "sorry",
+    "end",
+
+    // Tactic keywords
+    "intro",
+    "apply",
+    "exact",
+    "refl",
+    "rw",
+    "rewrite",
+    "cases",
+    "induction",
+    "simp",
+    "assumption",
+    "constructor",
+    "left",
+    "right",
+    "trivial",
+    "have",
+    "show",
+    "ring",
+
+    // Commands
+    "#check",
+    "#eval",
+    "#print",
+
+    // Symbols
+    ":",
+    ":=",
+    "=>",
+    "->",
+    "|",
+    "(",
+    ")",
+    "{",
+    "}",
+    "[",
+    "]",
+    ",",
+    ";",
+    "_",
+    "@",
+
+    // Whitespace & comments (skip)
+    r"\s+" => { },
+    r"--[^\n]*" => { },
+    r"/\*([^*]|\*[^/])*\*/" => { },
+} else {
+    // Number literals
+    r"[0-9]+" => NUM,
+    // Identifiers (including qualified names like Nat.add)
+    r"[a-zA-Z_][a-zA-Z0-9_'.]*" => IDENT,
+}
+
+// ─── Top-level ────────────────────────────────────────────────
+
+pub Program: Vec<Command> = {
+    <commands:Command*> => commands,
+};
+
+Command: Command = {
+    "def" <name:Ident> <params:Param*> <ty:(":" <Expr>)?> ":=" <body:Expr> => {
+        let body = wrap_lams(params.clone(), body);
+        let ty = ty.map(|t| wrap_pis(params, t));
+        Command::Def { name, ty, body }
+    },
+    "theorem" <name:Ident> <params:Param*> ":" <ty:Expr> ":=" <body:ProofBody> => {
+        let ty = wrap_pis(params, ty);
+        Command::Theorem { name, ty, body }
+    },
+    "lemma" <name:Ident> <params:Param*> ":" <ty:Expr> ":=" <body:ProofBody> => {
+        let ty = wrap_pis(params, ty);
+        Command::Theorem { name, ty, body }
+    },
+    "axiom" <name:Ident> ":" <ty:Expr> => {
+        Command::Axiom { name, ty }
+    },
+    "inductive" <name:Ident> <params:Param*> ":" <ty:Expr> "where" <ctors:CtorDef+> => {
+        let params: Vec<(Name, Expr)> = params.into_iter().map(|(n, t)| (n, t)).collect();
+        Command::Inductive { name, params, ty, constructors: ctors }
+    },
+    "#check" <e:Expr> => Command::Check(e),
+    "#eval" <e:Expr> => Command::Eval(e),
+    "#print" <name:Ident> => Command::Print(name),
+    "example" <params:Param*> ":" <ty:Expr> ":=" <body:ProofBody> => {
+        let ty = wrap_pis(params, ty);
+        Command::Example { ty, body }
+    },
+};
+
+CtorDef: Constructor = {
+    "|" <name:Ident> ":" <ty:CtorType> => Constructor { name, ty },
+};
+
+// Constructor types stop at `|` to avoid ambiguity with match arms
+CtorType: Expr = {
+    CtorArrow,
+};
+
+CtorArrow: Expr = {
+    <l:CtorApp> "->" <r:CtorArrow> => Expr::Arrow(Box::new(l), Box::new(r)),
+    CtorApp,
+};
+
+CtorApp: Expr = {
+    <f:CtorApp> <a:CtorAtom> => Expr::App(Box::new(f), Box::new(a)),
+    CtorAtom,
+};
+
+CtorAtom: Expr = {
+    <name:Ident> => Expr::Var(name),
+    <n:Num> => Expr::Nat(n),
+    "true" => Expr::BoolLit(true),
+    "false" => Expr::BoolLit(false),
+    "Prop" => Expr::Prop,
+    "Type" => Expr::Universe(0),
+    "_" => Expr::Hole,
+    "(" <e:Expr> ")" => Expr::Paren(Box::new(e)),
+};
+
+ProofBody: ProofBody = {
+    "by" "{" <tactics:SemiSep<Tactic>> "}" => ProofBody::Tactic(tactics),
+    <e:Expr> => ProofBody::Term(e),
+};
+
+// ─── Tactics ──────────────────────────────────────────────────
+
+Tactic: Tactic = {
+    "intro" <names:Ident+> => Tactic::Intro(names),
+    "apply" <e:TacExpr> => Tactic::Apply(e),
+    "exact" <e:TacExpr> => Tactic::Exact(e),
+    "refl" => Tactic::Refl,
+    "rw" "[" <e:TacExpr> "]" => Tactic::Rewrite(e),
+    "rewrite" "[" <e:TacExpr> "]" => Tactic::Rewrite(e),
+    "cases" <e:TacAtom> => Tactic::Cases(e),
+    "induction" <e:TacAtom> => Tactic::Induction(e),
+    "simp" => Tactic::Simp,
+    "assumption" => Tactic::Assumption,
+    "constructor" => Tactic::ConstructorTac,
+    "left" => Tactic::Left,
+    "right" => Tactic::Right,
+    "trivial" => Tactic::Trivial,
+    "sorry" => Tactic::Sorry,
+    "show" <e:TacExpr> => Tactic::Show(e),
+    "ring" => Tactic::Ring,
+};
+
+// Simplified expression grammar for inside tactics (no ambiguity with ; and })
+TacExpr: Expr = {
+    TacArrow,
+    "fun" <params:LamParam+> "=>" <body:TacExpr> => {
+        wrap_lams(params, body)
+    },
+    "forall" <params:Param+> "," <body:TacExpr> => {
+        wrap_pis(params, body)
+    },
+};
+
+TacArrow: Expr = {
+    <l:TacApp> "->" <r:TacArrow> => Expr::Arrow(Box::new(l), Box::new(r)),
+    TacApp,
+};
+
+TacApp: Expr = {
+    <f:TacApp> <a:TacAtom> => Expr::App(Box::new(f), Box::new(a)),
+    TacAtom,
+};
+
+TacAtom: Expr = {
+    <name:Ident> => Expr::Var(name),
+    <n:Num> => Expr::Nat(n),
+    "true" => Expr::BoolLit(true),
+    "false" => Expr::BoolLit(false),
+    "Prop" => Expr::Prop,
+    "Type" => Expr::Universe(0),
+    "_" => Expr::Hole,
+    "(" <e:Expr> ")" => Expr::Paren(Box::new(e)),
+};
+
+SemiSep<T>: Vec<T> = {
+    <mut v:(<T> ";")*> <e:T?> => {
+        if let Some(e) = e {
+            v.push(e);
+        }
+        v
+    },
+};
+
+// ─── Parameters ───────────────────────────────────────────────
+
+Param: (Name, Expr) = {
+    "(" <name:Ident> ":" <ty:Expr> ")" => (name, ty),
+};
+
+// ─── Expressions ──────────────────────────────────────────────
+
+Expr: Expr = {
+    ExprArrow,
+    "fun" <params:LamParam+> "=>" <body:Expr> => {
+        wrap_lams(params, body)
+    },
+    "forall" <params:Param+> "," <body:Expr> => {
+        wrap_pis(params, body)
+    },
+    "let" <name:Ident> <ty:(":" <ExprArrow>)?> ":=" <val:ExprArrow> "in" <body:Expr> => {
+        Expr::Let(name, ty.map(Box::new), Box::new(val), Box::new(body))
+    },
+    "if" <c:ExprApp> "then" <t:ExprArrow> "else" <e:Expr> => {
+        Expr::If(Box::new(c), Box::new(t), Box::new(e))
+    },
+    "match" <e:ExprApp> "with" <arms:MatchArmDef+> "end" => {
+        Expr::Match(Box::new(e), arms)
+    },
+};
+
+LamParam: (Name, Expr) = {
+    "(" <name:Ident> ":" <ty:Expr> ")" => (name, ty),
+    <name:Ident> => (name, Expr::Hole),
+};
+
+ExprArrow: Expr = {
+    <l:ExprApp> "->" <r:ExprArrow> => Expr::Arrow(Box::new(l), Box::new(r)),
+    ExprApp,
+};
+
+ExprApp: Expr = {
+    <f:ExprApp> <a:ExprAtom> => Expr::App(Box::new(f), Box::new(a)),
+    ExprAtom,
+};
+
+ExprAtom: Expr = {
+    <name:Ident> => Expr::Var(name),
+    <n:Num> => Expr::Nat(n),
+    "true" => Expr::BoolLit(true),
+    "false" => Expr::BoolLit(false),
+    "Prop" => Expr::Prop,
+    "Type" => Expr::Universe(0),
+    "_" => Expr::Hole,
+    "(" <e:Expr> ":" <ty:Expr> ")" => Expr::Ann(Box::new(e), Box::new(ty)),
+    "(" <e:Expr> ")" => Expr::Paren(Box::new(e)),
+    "@" <name:Ident> => Expr::Var(name),
+};
+
+MatchArmDef: MatchArm = {
+    "|" <pat:Pattern> "=>" <body:MatchBody> => MatchArm { pattern: pat, body },
+};
+
+MatchBody: Expr = {
+    ExprArrow,
+    "fun" <params:LamParam+> "=>" <body:MatchBody> => {
+        wrap_lams(params, body)
+    },
+    "forall" <params:Param+> "," <body:MatchBody> => {
+        wrap_pis(params, body)
+    },
+    "if" <c:ExprApp> "then" <t:ExprArrow> "else" <e:MatchBody> => {
+        Expr::If(Box::new(c), Box::new(t), Box::new(e))
+    },
+    "let" <name:Ident> <ty:(":" <ExprArrow>)?> ":=" <val:ExprArrow> "in" <body:MatchBody> => {
+        Expr::Let(name, ty.map(Box::new), Box::new(val), Box::new(body))
+    },
+    "match" <e:ExprApp> "with" <arms:MatchArmDef+> "end" => {
+        Expr::Match(Box::new(e), arms)
+    },
+};
+
+Pattern: Pattern = {
+    <name:Ident> <args:PatIdent*> => {
+        if args.is_empty() {
+            Pattern::Var(name)
+        } else {
+            Pattern::Constructor(name, args)
+        }
+    },
+    "_" => Pattern::Wildcard,
+    <n:Num> => Pattern::Nat(n),
+    "true" => Pattern::Bool(true),
+    "false" => Pattern::Bool(false),
+};
+
+PatIdent: String = {
+    <s:IDENT> => s.to_string(),
+};
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+Ident: String = {
+    <s:IDENT> => s.to_string(),
+};
+
+Num: u64 = {
+    <s:NUM> => s.parse().unwrap(),
+};

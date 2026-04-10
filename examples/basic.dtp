@@ -1,0 +1,80 @@
+-- DynTP: Basic examples
+-- =====================
+
+-- Check types of built-in things
+#check Nat
+#check Prop
+#check Type
+
+-- Define a simple value
+def mynat : Nat := 42
+
+-- Evaluate arithmetic
+#eval Nat.add 2 3
+#eval Nat.mul 3 4
+#eval Nat.add 0 1
+
+-- Define identity function
+def myid (A : Type) (x : A) : A := x
+
+-- Check the identity function
+#check myid
+
+-- Simple function composition
+def compose (A : Type) (B : Type) (C : Type) (f : B -> C) (g : A -> B) (x : A) : C := f (g x)
+
+-- Boolean operations
+def mynot (b : Bool) : Bool :=
+  if b then false else true
+
+#eval mynot true
+#eval mynot false
+
+-- Pattern matching on natural numbers
+def is_zero (n : Nat) : Bool :=
+  match n with
+    | zero => true
+    | succ m => false
+  end
+
+#eval is_zero 0
+#eval is_zero 5
+
+-- Predecessor
+def pred (n : Nat) : Nat :=
+  match n with
+    | zero => 0
+    | succ m => m
+  end
+
+#eval pred 5
+#eval pred 0
+
+-- Print definitions
+#print mynat
+#print Nat.add
+
+-- Theorem using exact
+theorem trivial_proof : Nat -> Nat := by {
+  intro n;
+  exact n
+}
+
+-- Theorem with intro and assumption
+theorem identity_proof : Nat -> Nat := by {
+  intro x;
+  assumption
+}
+
+-- Theorem with sorry (incomplete proof)
+theorem todo_proof : Nat -> Nat -> Nat := by {
+  sorry
+}
+
+-- Define a custom inductive type
+inductive MyList : Type where
+  | nil : MyList
+  | cons : Nat -> MyList -> MyList
+
+#check nil
+#check cons
